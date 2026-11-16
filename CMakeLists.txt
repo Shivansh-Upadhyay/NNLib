@@ -1,0 +1,63 @@
+cmake_minimum_required(VERSION 3.16)
+project(nnlib LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
+# Only build examples/tests/bench when nnlib is the main project (not when used by another project)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(NNLIB_IS_TOP ON)
+else()
+  set(NNLIB_IS_TOP OFF)
+endif()
+option(NNLIB_BUILD_EXAMPLES "Build the examples" ${NNLIB_IS_TOP})
+option(NNLIB_BUILD_TESTS    "Build the tests"    ${NNLIB_IS_TOP})
+option(NNLIB_BUILD_BENCH    "Build the benchmark" ${NNLIB_IS_TOP})
+option(NNLIB_SANITIZE       "Turn on ASan + UBSan (use with a Debug build)" OFF)
+
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag(-march=native NNLIB_HAS_MARCH_NATIVE)
+
+# The library: header-only, so it is just an include folder.
+add_library(nnlib INTERFACE)
+add_library(nnlib::nnlib ALIAS nnlib)
+target_include_directories(nnlib INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+# Warnings + speed flags for our own programs
+function(nnlib_setup target)
+  target_link_libraries(${target} PRIVATE nnlib::nnlib)
+  target_compile_options(${target} PRIVATE -Wall -Wextra)
+  if(NNLIB_HAS_MARCH_NATIVE)
+    target_compile_options(${target} PRIVATE $<$<CONFIG:Release>:-march=native>)
+  endif()
+  if(NNLIB_SANITIZE)
+    target_compile_options(${target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(${target} PRIVATE -fsanitize=address,undefined)
+  endif()
+endfunction()
+
+if(NNLIB_BUILD_EXAMPLES)
+  foreach(name example_xor train_mnist)
+    add_executable(${name} examples/${name}.cpp)
+    nnlib_setup(${name})
+  endforeach()
+endif()
+
+if(NNLIB_BUILD_BENCH)
+  add_executable(bench bench/bench.cpp)
+  nnlib_setup(bench)
+endif()
+
+if(NNLIB_BUILD_TESTS)
+  enable_testing()
+  foreach(name test_matrix test_layers test_loss test_training test_init)
+    add_executable(${name} tests/${name}.cpp)
+    nnlib_setup(${name})
+    add_test(NAME ${name} COMMAND ${name})
+  endforeach()
+endif()
